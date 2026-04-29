@@ -41,6 +41,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Octane FrankenPHP Bind Host / Port
+    |--------------------------------------------------------------------------
+    |
+    | Used by octane:frankenphp when --host / --port are omitted. For production
+    | HTTPS behind Caddy, set OCTANE_HOST to your public domain and OCTANE_PORT
+    | to 443 (see README).
+    |
+    */
+
+    'host' => env('OCTANE_HOST', '127.0.0.1'),
+
+    'port' => env('OCTANE_PORT', '8000'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Force HTTPS
     |--------------------------------------------------------------------------
     |

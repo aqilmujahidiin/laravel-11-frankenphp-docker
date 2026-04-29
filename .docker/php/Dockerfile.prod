@@ -34,9 +34,6 @@ RUN composer dump-autoload --optimize --no-dev
 # Stage 2: Production stage
 FROM dunglas/frankenphp:latest-php8.3 AS production
 
-# Set Caddy server name - configure via environment variable in production
-ENV SERVER_NAME=":8000"
-
 # Install only runtime dependencies
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -64,6 +61,8 @@ COPY --from=builder --chown=appuser:appgroup /var/www/html /var/www/html
 # Copy production configs
 COPY --chown=appuser:appgroup ./.docker/php/php.prod.ini /usr/local/etc/php/php.ini
 COPY ./.docker/etc/supervisor.d/supervisord.prod.conf /etc/supervisor/conf.d/supervisord.conf
+COPY ./.docker/php/docker-entrypoint-prod.sh /usr/local/bin/docker-entrypoint-prod.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-prod.sh
 
 # Set proper permissions
 RUN chown -R appuser:appgroup storage bootstrap/cache \
@@ -74,11 +73,7 @@ RUN php artisan config:clear \
     && php artisan route:clear \
     && php artisan view:clear
 
-EXPOSE 8000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/up || exit 1
+EXPOSE 80 443
 
 # Start Supervisor as root (required for process management), workers run as appuser
-CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint-prod.sh"]

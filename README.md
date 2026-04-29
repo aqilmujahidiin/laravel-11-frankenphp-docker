@@ -140,7 +140,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 | `.docker/php/php.prod.ini` | Hardened PHP configuration with OPcache |
 | `.docker/etc/supervisor.d/supervisord.prod.conf` | Production supervisor with Octane + 2 queue workers |
 | `docker-compose.prod.yml` | Production compose with resource limits and health checks |
-| `docker-compose.traefik.yml` | Optional Traefik reverse proxy compose override for domain + TLS |
+| `.docker/php/Caddyfile.prod` | Octane/Caddy site config (TLS email placeholder filled at container start) |
+| `.docker/php/docker-entrypoint-prod.sh` | Injects `LETSENCRYPT_EMAIL` into the Caddyfile, then starts Supervisor |
 | `.env.production.example` | Production environment template |
 | `.env.production` | Your production environment config (create from example) |
 | `.dockerignore` | Excludes dev files from production image |
@@ -165,6 +166,9 @@ Required settings:
    - `APP_KEY`: Application encryption key (required)
    - `DB_PASSWORD`: Set a strong database password
    - `APP_URL`: Your production domain (e.g., `https://your-domain.com`)
+   - `APP_DOMAIN`: Hostname only (e.g., `your-domain.com`) — must match DNS and `OCTANE_HOST`
+   - `LETSENCRYPT_EMAIL`: Email for Let's Encrypt / ACME registration (required)
+   - `OCTANE_HOST` / `OCTANE_PORT`: Typically your domain and `443` (FrankenPHP + Caddy HTTPS)
    - `SESSION_DOMAIN`: Your domain for cookies (e.g., `your-domain.com`)
    - Configure mail and S3 credentials as needed
 
@@ -186,47 +190,38 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
 ```
 
-### Production Setup (Traefik + Domain + HTTPS)
+### Production Setup (FrankenPHP + Caddy HTTPS)
 
-Use this setup when deploying with a real domain and automatic Let's Encrypt certificates.
+TLS and HTTP→HTTPS redirection are handled **inside the `web` container** by **FrankenPHP / Octane’s embedded Caddy** (see `.docker/php/Caddyfile.prod` and Supervisor `octane:frankenphp --https --http-redirect`). No separate Nginx or Traefik container is required.
 
 1. Ensure domain and firewall are ready:
    - Point your domain `A` record to the server IP.
-   - Open inbound ports `80` and `443`.
+   - Open inbound ports `80` and `443` on the host (mapped to the same ports in the `web` container).
 
-2. Add domain-specific variables in `.env.production`:
+2. Set these in `.env.production` (see `.env.production.example`):
 
 ```bash
 APP_DOMAIN=your-domain.com
 LETSENCRYPT_EMAIL=you@example.com
+OCTANE_HOST=your-domain.com
+OCTANE_PORT=443
+OCTANE_HTTPS=true
 APP_URL=https://your-domain.com
 SESSION_DOMAIN=your-domain.com
 ```
 
-3. Create the shared Docker network (once per server):
+3. Build and start production:
 
 ```bash
-docker network create proxy
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 ```
 
-4. Prepare Traefik ACME storage:
+4. TLS certificates are stored in the named volume `caddy-data` (mounted at `/data` in the `web` container) so they survive container recreation.
+
+5. Check logs:
 
 ```bash
-mkdir -p .docker/traefik
-touch .docker/traefik/acme.json
-chmod 600 .docker/traefik/acme.json
-```
-
-5. Start production stack with Traefik override:
-
-```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.traefik.yml up -d --build
-```
-
-6. Check logs:
-
-```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.traefik.yml logs -f traefik
+docker compose --env-file .env.production -f docker-compose.prod.yml logs -f web
 ```
 
 ### Apple Silicon / ARM64 Notes
@@ -250,9 +245,9 @@ If deploying to an AMD64/x86_64 server, you can optionally remove the `platform`
 - Check logs: `docker compose logs postgres`
 - On first boot, an existing non-PostgreSQL data directory on the volume will prevent startup—use a fresh volume path if you switched from MySQL.
 
-**`APP_DOMAIN` / `LETSENCRYPT_EMAIL` warning is empty when running with Traefik:**
-- Compose variable interpolation does not read `env_file` from the `web` service.
-- Run commands with `--env-file .env.production` and define `APP_DOMAIN` + `LETSENCRYPT_EMAIL` inside `.env.production`.
+**`APP_DOMAIN` / missing env when running Compose:**
+- Prefer `docker compose --env-file .env.production ...` so variables used for interpolation are loaded.
+- Set `APP_DOMAIN` (hostname only) and `LETSENCRYPT_EMAIL` in `.env.production`; they are required for health checks and ACME email injection into the Caddyfile at container start.
 
 **`failed to solve ... database/mysql-database: permission denied`:**
 - This usually comes from legacy local folders in build context, not from an active MySQL service.
@@ -286,7 +281,7 @@ Before deploying to production, ensure:
 
 - [ ] Strong, unique passwords for database and Redis
 - [ ] `APP_DEBUG=false` and `APP_ENV=production`
-- [ ] HTTPS configured (use a reverse proxy like Nginx/Traefik)
+- [ ] HTTPS configured (FrankenPHP + Caddy on ports 80/443, or another reverse proxy if you choose not to use embedded Caddy)
 - [ ] Secrets managed externally (Docker secrets, Vault, etc.)
 - [ ] Database backups configured
 - [ ] Monitoring and alerting set up
@@ -303,7 +298,8 @@ Before deploying to production, ensure:
 | display_errors | On | Off |
 | OPcache | Disabled | Enabled with JIT |
 | User | Root | appuser (1000) for workers |
-| Volumes | Source mounted | Image contains code + .env mounted |
+| Volumes | Source mounted | Image contains code + `.env` mounted + `caddy-data` for TLS storage |
+| Reverse proxy / TLS | Dev HTTP (`Dockerfile.local`) | FrankenPHP + Octane Caddy (`--https`) on host ports 80/443 |
 | Resource limits | None | CPU/Memory constrained |
 | PostgreSQL image | `postgres:16-alpine` | `postgres:16-alpine` |
 | Queue workers | 1 worker | 2 workers |

@@ -249,6 +249,11 @@ If deploying to an AMD64/x86_64 server, you can optionally remove the `platform`
 - Prefer `docker compose --env-file .env.production ...` so variables used for interpolation are loaded.
 - Set `APP_DOMAIN` (hostname only) and `LETSENCRYPT_EMAIL` in `.env.production`; they are required for health checks and ACME email injection into the Caddyfile at container start.
 
+**HTTPS / TLS “wrong host” or `openssl s_client` fails for your domain but works for `127.0.0.1`:**
+- Caddy’s site block uses Octane’s `--host`, wired from **`APP_DOMAIN`** in Supervisor (`%(ENV_APP_DOMAIN)s`). If `APP_DOMAIN` is unset or wrong, TLS/SNI may only match `127.0.0.1`.
+- Testing locally: `curl` uses SNI from the URL host. Prefer `--resolve` so SNI matches DNS:
+  `curl -kI --resolve your-domain.com:443:127.0.0.1 https://your-domain.com/up`
+
 **`failed to solve ... database/mysql-database: permission denied`:**
 - This usually comes from legacy local folders in build context, not from an active MySQL service.
 - Add these paths to `.dockerignore` if you do not use them:

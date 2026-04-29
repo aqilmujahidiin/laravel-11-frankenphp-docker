@@ -115,20 +115,28 @@ This repository includes a production-ready Docker configuration with security h
 
 ### Quick Start (Production)
 
+On the server you only need **Docker** (Composer / PHP on the host are optional). Dependencies are installed **during the image build**.
+
 ```bash
 # 1. Create production env file
 cp .env.production.example .env.production
 
-# 2. Generate and set APP_KEY in .env.production
-php artisan key:generate --show
+# 2. Edit .env.production: DB_*, APP_DOMAIN, OCTANE_HOST, LETSENCRYPT_EMAIL, APP_URL, SESSION_DOMAIN, etc.
 
-# 3. Set DB_PASSWORD in .env.production (required)
-
-# 4. Build and run
+# 3. Build and run (postgres + redis + web must be up before artisan below)
 docker compose --env-file .env.production -f docker-compose.prod.yml build
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 
-# 5. Check status
+# 4. Generate APP_KEY inside the web container (writes into mounted .env.production if that file is the container .env)
+docker compose --env-file .env.production -f docker-compose.prod.yml exec web php artisan key:generate --force
+
+# 5. Run migrations
+docker compose --env-file .env.production -f docker-compose.prod.yml exec web php artisan migrate --force
+
+# 6. Restart web so Octane picks up the new key/config
+docker compose --env-file .env.production -f docker-compose.prod.yml restart web
+
+# 7. Check status
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
 ```
 
@@ -154,12 +162,10 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 cp .env.production.example .env.production
 ```
 
-2. Configure production environment variables in `.env.production`:
+2. Configure production environment variables in `.env.production`, then after containers are running set the app key with Artisan **inside the `web` container**:
 
 ```bash
-# Generate APP_KEY
-php artisan key:generate --show
-# Copy the output and set it in .env.production
+docker compose --env-file .env.production -f docker-compose.prod.yml exec web php artisan key:generate --force
 ```
 
 Required settings:
@@ -224,6 +230,14 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d --bui
 docker compose --env-file .env.production -f docker-compose.prod.yml logs -f web
 ```
 
+6. Verify HTTPS from the server (SNI must match your public hostname — use `--resolve` when calling `https://127.0.0.1`):
+
+```bash
+curl -kI --resolve your-domain.com:443:127.0.0.1 https://your-domain.com/up
+```
+
+When DNS points to this machine, open `https://your-domain.com` in a browser.
+
 ### Apple Silicon / ARM64 Notes
 
 The production configuration includes `platform: linux/amd64` for the web container. This is required because FrankenPHP has compatibility issues on ARM64 architecture that cause segmentation faults. The x86_64 emulation via Rosetta 2 works reliably.
@@ -253,6 +267,13 @@ If deploying to an AMD64/x86_64 server, you can optionally remove the `platform`
 - Caddy’s site block uses Octane’s `--host`, wired from **`APP_DOMAIN`** in Supervisor (`%(ENV_APP_DOMAIN)s`). If `APP_DOMAIN` is unset or wrong, TLS/SNI may only match `127.0.0.1`.
 - Testing locally: `curl` uses SNI from the URL host. Prefer `--resolve` so SNI matches DNS:
   `curl -kI --resolve your-domain.com:443:127.0.0.1 https://your-domain.com/up`
+
+**`/up` returns HTTP 500:**
+- Often missing **`APP_KEY`** or database not migrated. Run: `docker compose ... exec web php artisan key:generate --force` and `php artisan migrate --force`, then restart `web`.
+- Inspect errors: `docker compose ... exec web tail -n 80 storage/logs/laravel.log` (path inside the container).
+
+**`Bind for 0.0.0.0:80 failed: port is already allocated`:**
+- Another service or container is already using host port **80** (often another `docker-proxy`). Stop that stack or change host ports via `APP_HTTP_PORT` / `APP_HTTPS_PORT` in `.env.production`.
 
 **`failed to solve ... database/mysql-database: permission denied`:**
 - This usually comes from legacy local folders in build context, not from an active MySQL service.
@@ -286,6 +307,8 @@ Before deploying to production, ensure:
 
 - [ ] Strong, unique passwords for database and Redis
 - [ ] `APP_DEBUG=false` and `APP_ENV=production`
+- [ ] `APP_KEY` generated (`docker compose exec web php artisan key:generate --force`)
+- [ ] Database migrated (`docker compose exec web php artisan migrate --force`)
 - [ ] HTTPS configured (FrankenPHP + Caddy on ports 80/443, or another reverse proxy if you choose not to use embedded Caddy)
 - [ ] Secrets managed externally (Docker secrets, Vault, etc.)
 - [ ] Database backups configured

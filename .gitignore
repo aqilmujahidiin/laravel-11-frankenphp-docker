@@ -21,3 +21,7 @@ yarn-error.log
 /caddy
 frankenphp
 frankenphp-worker.php
+
+database/mysql-database
+database/mysql-database-test
+database/redis-database

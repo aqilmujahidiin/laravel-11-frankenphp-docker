@@ -125,11 +125,11 @@ php artisan key:generate --show
 # 3. Set DB_PASSWORD in .env.production (required)
 
 # 4. Build and run
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml up -d
+docker compose --env-file .env.production -f docker-compose.prod.yml build
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 
 # 5. Check status
-docker compose -f docker-compose.prod.yml ps
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
 ```
 
 ### Production Files
@@ -140,6 +140,7 @@ docker compose -f docker-compose.prod.yml ps
 | `.docker/php/php.prod.ini` | Hardened PHP configuration with OPcache |
 | `.docker/etc/supervisor.d/supervisord.prod.conf` | Production supervisor with Octane + 2 queue workers |
 | `docker-compose.prod.yml` | Production compose with resource limits and health checks |
+| `docker-compose.traefik.yml` | Optional Traefik reverse proxy compose override for domain + TLS |
 | `.env.production.example` | Production environment template |
 | `.env.production` | Your production environment config (create from example) |
 | `.dockerignore` | Excludes dev files from production image |
@@ -170,19 +171,62 @@ Required settings:
 3. Build the production image:
 
 ```bash
-docker compose -f docker-compose.prod.yml build
+docker compose --env-file .env.production -f docker-compose.prod.yml build
 ```
 
 4. Run production containers:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
 ```
 
 5. Verify all containers are healthy:
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
+```
+
+### Production Setup (Traefik + Domain + HTTPS)
+
+Use this setup when deploying with a real domain and automatic Let's Encrypt certificates.
+
+1. Ensure domain and firewall are ready:
+   - Point your domain `A` record to the server IP.
+   - Open inbound ports `80` and `443`.
+
+2. Add domain-specific variables in `.env.production`:
+
+```bash
+APP_DOMAIN=your-domain.com
+LETSENCRYPT_EMAIL=you@example.com
+APP_URL=https://your-domain.com
+SESSION_DOMAIN=your-domain.com
+```
+
+3. Create the shared Docker network (once per server):
+
+```bash
+docker network create proxy
+```
+
+4. Prepare Traefik ACME storage:
+
+```bash
+mkdir -p .docker/traefik
+touch .docker/traefik/acme.json
+chmod 600 .docker/traefik/acme.json
+```
+
+5. Start production stack with Traefik override:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.traefik.yml up -d --build
+```
+
+6. Check logs:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml -f docker-compose.traefik.yml logs -f traefik
 ```
 
 ### Apple Silicon / ARM64 Notes
@@ -205,6 +249,18 @@ If deploying to an AMD64/x86_64 server, you can optionally remove the `platform`
 - Ensure `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` match what you expect (they map to `POSTGRES_*` in Compose).
 - Check logs: `docker compose logs postgres`
 - On first boot, an existing non-PostgreSQL data directory on the volume will prevent startup—use a fresh volume path if you switched from MySQL.
+
+**`APP_DOMAIN` / `LETSENCRYPT_EMAIL` warning is empty when running with Traefik:**
+- Compose variable interpolation does not read `env_file` from the `web` service.
+- Run commands with `--env-file .env.production` and define `APP_DOMAIN` + `LETSENCRYPT_EMAIL` inside `.env.production`.
+
+**`failed to solve ... database/mysql-database: permission denied`:**
+- This usually comes from legacy local folders in build context, not from an active MySQL service.
+- Add these paths to `.dockerignore` if you do not use them:
+  - `database/mysql-database`
+  - `database/mysql-database-test`
+  - `database/redis-database`
+- Or fix ownership/permissions on those directories in the deploy server.
 
 **Dev dependencies not found during build:**
 - The `composer.json` includes a `dont-discover` list for dev-only packages

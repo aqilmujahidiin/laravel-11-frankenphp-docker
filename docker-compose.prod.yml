@@ -24,8 +24,9 @@ services:
                 condition: service_healthy
         deploy:
             resources:
+                # Host must have ≥ this many CPUs; on 1 vCPU VPS use "1"
                 limits:
-                    cpus: '2'
+                    cpus: '1'
                     memory: 1G
                 reservations:
                     cpus: '0.5'

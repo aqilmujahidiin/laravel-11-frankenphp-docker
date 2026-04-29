@@ -18,7 +18,7 @@ services:
         networks:
             - lara-prod
         depends_on:
-            mysql:
+            postgres:
                 condition: service_healthy
             redis:
                 condition: service_healthy
@@ -36,28 +36,21 @@ services:
                 max-size: "10m"
                 max-file: "3"
 
-    mysql:
-        image: mysql:${MYSQL_VERSION:-8.0}
+    postgres:
+        image: postgres:${POSTGRES_VERSION:-16-alpine}
         restart: unless-stopped
         ports:
-            - "${FORWARD_DB_PORT:-3306}:3306"
+            - "${FORWARD_DB_PORT:-5432}:5432"
         environment:
-            MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
-            MYSQL_ROOT_HOST: "localhost"
-            MYSQL_DATABASE: ${DB_DATABASE}
-            MYSQL_USER: ${DB_USERNAME}
-            MYSQL_PASSWORD: ${DB_PASSWORD}
-            MYSQL_ALLOW_EMPTY_PASSWORD: 0
+            POSTGRES_DB: ${DB_DATABASE}
+            POSTGRES_USER: ${DB_USERNAME}
+            POSTGRES_PASSWORD: ${DB_PASSWORD}
         volumes:
-            - mysql-data:/var/lib/mysql
+            - postgres-data:/var/lib/postgresql/data
         networks:
             - lara-prod
         healthcheck:
-            test:
-                - CMD
-                - mysqladmin
-                - ping
-                - -p${DB_PASSWORD}
+            test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
             interval: 10s
             retries: 5
             timeout: 5s
@@ -112,7 +105,7 @@ networks:
         driver: bridge
 
 volumes:
-    mysql-data:
+    postgres-data:
         driver: local
     redis-data:
         driver: local

@@ -12,31 +12,24 @@ services:
         networks:
             - lara11-beta
         depends_on:
-            - mysql
+            - postgres
             - redis
             - minio
             - mailpit
-    mysql:
-        image: mysql/mysql-server:${MYSQL_VERSION:-8.0}
+    postgres:
+        image: postgres:${POSTGRES_VERSION:-16-alpine}
         ports:
-            - ${FORWARD_DB_PORT:-3306}:3306
+            - ${FORWARD_DB_PORT:-5432}:5432
         environment:
-            MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
-            MYSQL_ROOT_HOST: "%"
-            MYSQL_DATABASE: ${DB_DATABASE}
-            MYSQL_USER: ${DB_USERNAME}
-            MYSQL_PASSWORD: ${DB_PASSWORD}
-            MYSQL_ALLOW_EMPTY_PASSWORD: 1
+            POSTGRES_DB: ${DB_DATABASE}
+            POSTGRES_USER: ${DB_USERNAME}
+            POSTGRES_PASSWORD: ${DB_PASSWORD}
         volumes:
-            - ${DB_VOLUME_LOCAL:-./database/mysql-test-data}:/var/lib/mysql
+            - ${DB_VOLUME_LOCAL:-./database/postgres-data}:/var/lib/postgresql/data
         networks:
             - lara11-beta
         healthcheck:
-            test:
-                - CMD
-                - mysqladmin
-                - ping
-                - -p${DB_PASSWORD}
+            test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
             retries: 3
             timeout: 5s
     redis:

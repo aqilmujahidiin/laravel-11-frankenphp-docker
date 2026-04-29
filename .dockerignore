@@ -58,7 +58,7 @@ storage/logs/*
 !storage/logs/.gitignore
 
 # Database local files
-database/mysql-*
+database/postgres-*
 database/redis-*
 
 # Local storage mounts

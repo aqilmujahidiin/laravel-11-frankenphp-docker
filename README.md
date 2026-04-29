@@ -4,7 +4,7 @@ This repo is a docker boilerplate to use for Laravel projects. Containers includ
 
 1. [Laravel 11 & 12](https://laravel.com/docs/)
 2. [FrankenPHP](https://frankenphp.dev/docs/docker/)
-3. MySQL
+3. PostgreSQL
 4. Redis
 5. Supervisor
 6. [Octane](https://laravel.com/docs/octane)
@@ -43,9 +43,9 @@ Edit the `.env` file to configure your application settings. At a minimum, you s
 - `APP_KEY`: The application key (will be generated in the next step).
 - `APP_DEBUG`: Set to `true` for debugging.
 - `APP_URL`: The URL of your application.
-- `DB_CONNECTION`: The database connection (e.g., mysql).
+- `DB_CONNECTION`: The database connection (e.g., `pgsql`).
 - `DB_HOST`: The database host.
-- `DB_PORT`: The database port.
+- `DB_PORT`: The database port (e.g., `5432` for PostgreSQL).
 - `DB_DATABASE`: The database name.
 - `DB_USERNAME`: The database username.
 - `DB_PASSWORD`: The database password.
@@ -201,9 +201,10 @@ If deploying to an AMD64/x86_64 server, you can optionally remove the `platform`
 - Ensure `APP_KEY` is set in `.env.production`
 - The `.env.production` file must be mounted to the container (configured in docker-compose.prod.yml)
 
-**MySQL fails to start:**
-- Use the official `mysql` image instead of `mysql/mysql-server`
-- Ensure `DB_PASSWORD` is set (empty passwords are not allowed)
+**PostgreSQL fails to start or stays unhealthy:**
+- Ensure `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` match what you expect (they map to `POSTGRES_*` in Compose).
+- Check logs: `docker compose logs postgres`
+- On first boot, an existing non-PostgreSQL data directory on the volume will prevent startup—use a fresh volume path if you switched from MySQL.
 
 **Dev dependencies not found during build:**
 - The `composer.json` includes a `dont-discover` list for dev-only packages
@@ -248,7 +249,7 @@ Before deploying to production, ensure:
 | User | Root | appuser (1000) for workers |
 | Volumes | Source mounted | Image contains code + .env mounted |
 | Resource limits | None | CPU/Memory constrained |
-| MySQL image | `mysql/mysql-server` | `mysql` (official) |
+| PostgreSQL image | `postgres:16-alpine` | `postgres:16-alpine` |
 | Queue workers | 1 worker | 2 workers |
 
 ## Contributing
